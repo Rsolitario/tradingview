@@ -1,0 +1,384 @@
+//@version=4
+
+strategy(
+ title="DC - RSIX SE",
+ initial_capital=180,
+ default_qty_type=strategy.fixed,
+ default_qty_value=1,
+ currency=currency.CAD,
+ commission_type=strategy.commission.percent,
+ commission_value=0.0,
+ pyramiding=2
+ )
+
+// Adds asset class to chart as a table
+var table asset_type = table.new(position.top_right, 1, 1)
+// We call syminfo.type outside the `if` block so it executes on each bar.
+syminfo_type = syminfo.type
+if barstate.islast
+    // We only populate the table on the last bar.
+    table.cell(asset_type, 0, 0, syminfo_type, bgcolor=color.white,text_color=color.black)
+    
+// This custom function helps target the "nth" occurrence of a condition:
+barssince_nth(_cond, _count) => _barssince=bar_index-valuewhen(_cond, bar_index, _count)
+
+// 
+// Indicator
+// 
+
+// RSI
+len = input(14, minval=1, title="Length")
+src = input(close, "Source", type = input.source)
+
+up = rma(max(change(src), 0), len)
+down = rma(-min(change(src), 0), len)
+rsi = down == 0 ? 100 : up == 0 ? 0 : 100 - (100 / (1 + up / down))
+plot(rsi, "RSI", color=#8E1599, linewidth=2)
+
+
+// Horizontal Lines
+ob_level = input(60)
+os_level = input(40)
+osline = hline(ob_level, "Oversold", color=color.red, linewidth=2, linestyle=hline.style_solid)
+obline = hline(os_level, "Overbought", color=color.blue, linewidth=2, linestyle=hline.style_solid)
+fifty = hline(50, "Middle Line", color=color.aqua)
+
+
+// RSI "Bollinger" Bands
+bands_len = 20
+bands_mult = input(2.0, minval=0.001, maxval=50, title="StdDev")
+bands_basis = sma(rsi, bands_len)
+bands_dev = bands_mult * stdev(rsi, bands_len)
+bands_upper = bands_basis + bands_dev
+bands_lower = bands_basis - bands_dev
+plot(bands_basis, "Basis", color=#872323, linewidth=2)
+p1 = plot(bands_upper, "Upper", color=color.teal)
+p2 = plot(bands_lower, "Lower", color=color.teal)
+
+// Bands Basis (Middle) Line Changes Color with Direction
+basis_color = falling(bands_basis,1) ? color.red : color.green
+plot(bands_basis, color=basis_color, linewidth=2)
+
+
+// Other RSI Moving Averages
+// Note: We can add more MAs, and/or try different types of MA (eg EMA)
+fast_ma_len = input(4)
+slow_ma_len = input(6)
+fast_ma = sma(rsi,fast_ma_len)
+slow_ma = sma(rsi,slow_ma_len)
+plot(fast_ma, "Fast MA", color=color.yellow)
+plot(slow_ma, "slow_ma", color=color.orange)
+
+
+//
+// SIGNAL 1: ORANGE FLAGS
+// These are based on the 2nd MA crossing the bands Basis line a certain number of times. Counting code is below.
+
+// SHORT SIGNAL:
+//
+slow_maCrossunder = crossunder(slow_ma,bands_basis)
+// Checks to see if the crossunder was large enough to be valid
+slow_maCrossunderSizeCheck = slow_ma[1]-bands_basis[1] > 2 or slow_ma[2]-bands_basis[2] > 2 or slow_ma[3]-bands_basis[3] > 2 or slow_ma[4]-bands_basis[4] > 2 or slow_ma[5]-bands_basis[5] > 2
+validslow_maCrossunder = slow_maCrossunder and slow_maCrossunderSizeCheck
+// Verify crossunders look good by plotting each one (optional):
+// plotshape(validslow_maCrossunder, style=shape.triangledown, color=color.orange, size=size.tiny, location=location.top)
+
+// Counting code:
+// Starts at 0
+validMACrossunders = 0
+// How many crossunders complete a alid cycle to produce a signal/shape?
+targetMACrossunders = 5
+
+validMACrossunders := validMACrossunders[1]
+if( low<lowest(low[1],100) ) // If price drops to new lows (100 is arbitrary value), reset count. (Could add 'OR price is lower than valuewhen validMACrossunders == 1')
+    validMACrossunders := 0  
+if( validMACrossunders == 6 ) // If price just keeps going up instead of reversing, reset count
+    validMACrossunders := 1
+if( validslow_maCrossunder )
+    validMACrossunders := validMACrossunders + 1 // increment count
+
+shortSignal = validMACrossunders == targetMACrossunders and valuewhen(validslow_maCrossunder,bands_basis,0)>50 // signal when target number of crossunders occurred.
+shortSignalDedupe = shortSignal and not shortSignal[1] // avoid repeated signals (might be a better way to do this...)
+plotshape(shortSignalDedupe, style=shape.flag, color=color.orange, size=size.small, location=location.top, title="Short Signal") // plot the yellow flag!!
+
+take_orange_flags_short = input(true) // check to see if input is set for this signal to be used in strategy
+short_entry_orange = shortSignalDedupe and take_orange_flags_short == true
+
+// LONG SIGNAL
+//
+slow_maCrossover = crossover(slow_ma,bands_basis)
+slow_maCrossoverSizeCheck = bands_basis[1]-slow_ma[1] > 2 or bands_basis[2]-slow_ma[2] > 2 or bands_basis[3]-slow_ma[3] > 2 or bands_basis[4]-slow_ma[4] > 2 or bands_basis[5]-slow_ma[5] > 2 or bands_basis[6]-slow_ma[6] > 2 or bands_basis[7]-slow_ma[7] > 2
+validslow_maCrossover = slow_maCrossover and slow_maCrossoverSizeCheck
+// plotshape(validslow_maCrossover, style=shape.triangleup, color=color.orange, size=size.tiny, location=location.bottom)
+
+validMACrossovers = 0
+targetMACrossovers = 5
+
+validMACrossovers := validMACrossovers[1]
+if( close>highest(close[1],100) )
+    validMACrossovers := 0
+if( validMACrossovers == 6 )
+    validMACrossovers := 1
+if( validslow_maCrossover )
+    validMACrossovers := validMACrossovers + 1 // increment count
+longSignal = validMACrossovers == targetMACrossovers and valuewhen(validslow_maCrossover,bands_basis,0)<50
+longSignalDedupe = longSignal and not longSignal[1]
+plotshape(longSignalDedupe, style=shape.flag, color=color.orange, size=size.small, location=location.bottom, title="Long Signal")
+
+take_orange_flags_long = input(true)
+long_entry_orange = longSignalDedupe and take_orange_flags_long == true
+
+
+//
+// SIGNAL 2: BLUE FLAGS
+// -----
+// These occur after a crossunder of a moving average line and the Overbought or Oversold level.
+// We count these and plot a blue flag when the target number is achieved.
+// Future Ideas:
+// Make loops larger on the opposing side (look at examples where it's big enough on one side but not the other)
+// Can consider signalling on entering OB/S zone ie when starting 5th time (condition = cross count == 4 and then cross into ob/s zone)
+
+//  SHORTS
+// slow_ma - wait for crossunder
+ob_crossunder = crossunder(slow_ma,ob_level)
+ob_crossunder_size_check = max(slow_ma[1],slow_ma[2],slow_ma[3],slow_ma[4],slow_ma[5],slow_ma[6],slow_ma[7])-60 > 2
+valid_ob_crossunder = ob_crossunder and ob_crossunder_size_check
+// Plot crosses for validating
+// plotshape(valid_ob_crossunder and barssince_nth(valid_ob_crossunder, 1) > 5, style=shape.triangledown, color=color.blue, size=size.tiny, location=location.top)
+
+valid_ob_crossunders  = 0
+target_ob_crossunders = 5
+
+valid_ob_crossunders := valid_ob_crossunders[1]
+if( low<lowest(low[1],100) )
+    valid_ob_crossunders := 0
+if( valid_ob_crossunders == 6 )
+    valid_ob_crossunders := 1
+if( valid_ob_crossunder )
+    valid_ob_crossunders := valid_ob_crossunders + 1 // increment count
+short_ob_signal = valid_ob_crossunders == target_ob_crossunders
+short_ob_signal_dedupe = short_ob_signal and not short_ob_signal[1]
+plotshape(short_ob_signal_dedupe, style=shape.flag, color=color.blue, size=size.small, location=location.top, title="Short Signal")
+
+take_blue_flags_short = input(true)
+short_entry_blue = short_ob_signal_dedupe and take_blue_flags_short == true
+
+//   LONGS
+os_crossover = crossover(slow_ma,40)
+os_crossover_size_check = 40 - min(slow_ma[1],slow_ma[2],slow_ma[3],slow_ma[4],slow_ma[5],slow_ma[6],slow_ma[7]) > 2
+valid_os_crossover = os_crossover and os_crossover_size_check
+// Plot crosses for validating
+// plotshape(valid_os_crossover and barssince_nth(valid_os_crossover, 1) > 5, style=shape.triangleup, color=color.blue, size=size.tiny, location=location.bottom)
+
+valid_os_crossovers  = 0
+target_os_crossovers = 5
+
+valid_os_crossovers := valid_os_crossovers[1]
+if( high>highest(high[1],100) )
+    valid_os_crossovers := 0
+if( valid_os_crossovers == 6 )
+    valid_os_crossovers := 1
+if( valid_os_crossover )
+    valid_os_crossovers := valid_os_crossovers + 1 // increment count
+long_os_signal = valid_os_crossovers == target_os_crossovers
+long_os_signal_dedupe = long_os_signal and not long_os_signal[1]
+// PLOT BLUE FLAG
+plotshape(long_os_signal_dedupe, style=shape.flag, color=color.blue, size=size.small, location=location.bottom, title="Short Signal")
+
+take_blue_flags_long = input(true)
+long_entry_blue = long_os_signal_dedupe and take_blue_flags_long == true
+
+
+//
+// SIGNAL 3: PURPLE FLAGS (Longest Signal)
+// -----
+// These occur after a crossunder/over of the Bands Basis (middle) line with the Overbought or Oversold levels.
+// We count these and plot a blue flag when the target number is achieved.
+// Future Ideas:
+// - Can test an exit of just 2 crosses
+// - Can consider signalling on entering OB/S zone ie when starting 5th time (condition = cross count == 4 and then cross into ob/s zone)
+
+//  SHORTS
+basis_ob_crossunder = crossunder(bands_basis,60)
+basis_ob_size_check = max(bands_basis[1],bands_basis[2],bands_basis[3],bands_basis[4],bands_basis[5],bands_basis[6],bands_basis[7])-60 > 2
+valid_basis_ob_crossunder = basis_ob_crossunder and basis_ob_size_check
+plotshape(valid_basis_ob_crossunder, style=shape.triangledown, color=color.purple, size=size.tiny, location=location.top)
+
+valid_basis_ob_crossunders  = 0
+target_basis_ob_crossunders = 5
+
+valid_basis_ob_crossunders := valid_basis_ob_crossunders[1]
+if( low<lowest(low[1],250) )
+    valid_basis_ob_crossunders := 0
+if( valid_basis_ob_crossunders == 6 )
+    valid_basis_ob_crossunders := 1
+if( valid_basis_ob_crossunder )
+    valid_basis_ob_crossunders := valid_basis_ob_crossunders + 1 // increment count
+short_basis_ob_signal = valid_basis_ob_crossunders == target_basis_ob_crossunders
+short_basis_ob_signal_dedupe = short_basis_ob_signal and not short_basis_ob_signal[1]
+plotshape(short_basis_ob_signal_dedupe, style=shape.flag, color=color.purple, size=size.small, location=location.top, title="Short Signal")
+
+take_purple_flags_short = input(true)
+short_entry_purple = short_basis_ob_signal_dedupe and take_purple_flags_short == true
+
+//  LONGS
+basis_os_crossover = crossover(bands_basis,40)
+basis_os_crossover_size_check = 40 - min(bands_basis[1],bands_basis[2],bands_basis[3],bands_basis[4],bands_basis[5],bands_basis[6],bands_basis[7]) > 2
+valid_basis_os_crossover = basis_os_crossover and basis_os_crossover_size_check
+plotshape(valid_basis_os_crossover, style=shape.triangleup, color=color.purple, size=size.tiny, location=location.bottom)
+
+valid_basis_os_crossovers  = 0
+target_basis_os_crossovers = 5
+
+valid_basis_os_crossovers := valid_basis_os_crossovers[1]
+if( high>highest(high[1],250) )
+    valid_basis_os_crossovers := 0
+if( valid_basis_os_crossovers == 6 )
+    valid_basis_os_crossovers := 1
+if( valid_basis_os_crossover )
+    valid_basis_os_crossovers := valid_basis_os_crossovers + 1 // increment count
+long_basis_os_signal = valid_basis_os_crossovers == target_basis_os_crossovers
+long_basis_os_signal_dedupe = long_basis_os_signal and not long_basis_os_signal[1]
+plotshape(long_basis_os_signal_dedupe, style=shape.flag, color=color.purple, size=size.small, location=location.bottom, title="Short Signal")
+
+take_purple_flags_long = input(true)
+long_entry_purple = long_basis_os_signal_dedupe and take_purple_flags_long == true
+
+
+//
+// STRATEGY RULES
+//
+
+// This is the current Entry criteria.
+// Basically we are watching for a pattern of the Basis (middle of bands) and Moving Average lines to occur
+basis_low_longs = input(35)
+// Basis line drops below certain value
+basis_got_really_low = bands_basis <= basis_low_longs
+basis_got_really_low_within_n_bars = input(40)
+// The it crosses up the OS level
+basis_crossover_os = crossover(bands_basis,os_level)
+basis_crossover_os_within_n_bars = input(30)
+// Then the (slower) MA crosses back down the 50 line (this assumes it crossed above of course)
+slow_ma_crossunder_50 = crossunder(slow_ma,50)
+slow_ma_crossunder_50_within_n_bars = input(20)
+// And it all has to happen within a certain number of bars...
+basis_long_entry = barssince(basis_got_really_low)<basis_got_really_low_within_n_bars and barssince(basis_crossover_os)<basis_crossover_os_within_n_bars and barssince(slow_ma_crossunder_50)<slow_ma_crossunder_50_within_n_bars and crossover(fast_ma,slow_ma) and valuewhen(crossover(fast_ma,slow_ma),fast_ma,0)<50
+
+plotshape(basis_long_entry,location=location.bottom,size=size.small,style=shape.triangleup,color=color.green)
+
+basis_high_shorts = input(70)
+basis_got_really_high = bands_basis >= basis_high_shorts
+basis_crossunder_ob = crossunder(bands_basis,ob_level)
+slow_ma_crossover_50 = crossover(slow_ma,50)
+basis_short_entry = barssince(basis_got_really_high)<40 and barssince(basis_crossunder_ob)<30 and barssince(slow_ma_crossover_50)<20 and crossunder(fast_ma,slow_ma) and valuewhen(crossunder(fast_ma,slow_ma),fast_ma,0)>50
+
+plotshape(basis_short_entry,location=location.top,size=size.small,style=shape.triangledown,color=color.red)
+
+
+// Protects against entering more trades too quickly
+barssince_entry = input(15)
+signal_delay_long = barssince(basis_long_entry[1])>=barssince_entry
+signal_delay_short = barssince(basis_short_entry[1])>=barssince_entry
+
+
+//
+// AUTOTRADING: INPUTS, ALERTS, ETC.
+//
+
+// risk is for PineConnector (Forex/CFD broker)
+risk = input(0.1,"Risk for Autotrading Alerts")
+// quantityPct is for 
+quantityPct = input(10, tooltip="This will be multiplied by leverage, so eg 10% risk x 2 leverage = $200 if set to 10% and balance is $1,000") // can be lot size or % of account depending on PineConnector EA settins
+leverage = input(2, tooltip="This will multiply risk accordingly.")
+
+// CRYPTO EXCHANGE HELPER
+binance_testnet = input(true)
+exchange = binance_testnet == true ? "binancefuturestestnet" : "binancefutures"
+
+// FIXES SYMBOL NAMES TO MATCH BINANCE. COULD ADD CONDITION TO CHECK FOR EXCHANGE LATER IF USING MORE THAN ONE
+// This finction and variable allows for non-USDT symbols (but not currently trading these)
+
+// ————— Function returning the rightmost `_n` characters in `_str`.
+f_strRight(_str, _n) =>
+    // string _str: source string.
+    // int    _n  : number of rightmost characters to return.
+    string[] _chars = str.split(_str, "")
+    int _len = array.size(_chars)
+    int _beg = max(0, _len - _n)
+    string[] _substr = array.new_string(0)
+    if _beg < _len
+        _substr := array.slice(_chars, _beg, _len)
+    string _return = array.join(_substr, "")
+rmPERP = str.replace_all(syminfo.ticker, "PERP", "") 
+exhange_symbol_fix = f_strRight(rmPERP,4) == "USDT" ? rmPERP : rmPERP+"USD"
+
+// ALERT MESSAGES
+// Set Default:
+buy_alert_msg            =  "Asset type not valid"
+sell_alert_msg           =  "Asset type not valid"
+closelong_alert_msg      =  "Asset type not valid"
+closeshort_alert_msg     =  "Asset type not valid"
+
+// % Stop Loss Calculation
+sl_pct_crypto = input(10.0, type=input.float, step=.25) / 100
+sl_pct_fx_cfd = input(2.0, type=input.float, step=0.5) / 100
+//tp_pct = input(10.0, title='Take Profit %', type=input.float) / 100
+// shortTake = strategy.position_avg_price * (1 - takePer)
+// longTake = strategy.position_avg_price * (1 + takePer)
+// if strategy.position_size > 0 
+//     strategy.exit(id="Close Long", stop=longStop, limit=longTake)
+// if strategy.position_size < 0 
+//     strategy.exit(id="Close Short", stop=shortStop, limit=shortTake)
+
+// Default SL (set later by asset type)
+longStop  = 1000000.0
+shortStop = 0.0
+
+// Logic for different autotrade service syntax
+
+// Note: use {{strategy.order.alert_message}} placeholder for alert_message content
+
+if syminfo.type == "crypto"
+    // strategy stop loss
+    longStop  := strategy.position_avg_price * (1 - sl_pct_crypto)
+    shortStop := strategy.position_avg_price * (1 + sl_pct_crypto)
+    // Autoview syntax
+    buy_alert_msg        :=  "b=buy e="+exchange+" l="+tostring(leverage)+" lt=isolated q="+tostring(quantityPct)+"% s="+exhange_symbol_fix+" t=limit"
+    sell_alert_msg       :=  "b=sell e="+exchange+" l="+tostring(leverage)+" lt=isolated q="+tostring(quantityPct)+"% s="+exhange_symbol_fix+" t=market"
+    closelong_alert_msg  :=  "c=position e="+exchange+" s="+exhange_symbol_fix+" t=market d=1"
+    closeshort_alert_msg :=  "c=position e="+exchange+" s="+exhange_symbol_fix+" t=market d=1"
+if syminfo.type == "cfd" or syminfo.type == "forex" or syminfo.type == "index" or syminfo.type == "stock"
+    // strategy stop loss
+    longStop  := strategy.position_avg_price * (1 - sl_pct_fx_cfd)
+    shortStop := strategy.position_avg_price * (1 + sl_pct_fx_cfd)
+    // PineConnector syntax
+    buy_alert_msg        :=  "5466120683703,buy,"+syminfo.ticker+",sl="+tostring(longStop)+",risk="+tostring(risk)
+    sell_alert_msg       :=  "5466120683703,sell,"+syminfo.ticker+",sl="+tostring(shortStop)+",risk="+tostring(risk)
+    closelong_alert_msg  :=  "5466120683703,closelong,"+syminfo.ticker
+    closeshort_alert_msg :=  "5466120683703,closeshort,"+syminfo.ticker
+
+// Decides on method of Exit / Take Profit
+exit_style = input(defval="Opposing Signal", options=["Opposing Signal", "Flags"])
+
+long_entry  = basis_long_entry and signal_delay_long
+short_entry = basis_short_entry and signal_delay_short
+
+flag_exit_any_flag_long  = short_entry_orange or short_entry_blue or short_entry_purple
+flag_exit_any_flag_short = long_entry_orange or long_entry_blue or long_entry_purple
+
+if exit_style == "Opposing Signal"
+    strategy.entry("Buy", strategy.long, when=long_entry, alert_message=buy_alert_msg)
+    strategy.close("Buy", when=basis_short_entry, alert_message=closelong_alert_msg)
+    strategy.exit("Exit Buy",from_entry="Buy",stop=longStop, alert_message=closelong_alert_msg)
+
+    strategy.entry("Sell", strategy.short, when=short_entry, alert_message=sell_alert_msg)
+    strategy.close("Sell", when=basis_long_entry, alert_message=closeshort_alert_msg)
+    strategy.exit("Exit Sell",from_entry="Sell", stop=shortStop, alert_message=closeshort_alert_msg)
+else if exit_style == "Flags"
+    strategy.entry("Buy", strategy.long, when=long_entry, alert_message=buy_alert_msg)
+    strategy.exit("Exit Buy",from_entry="Buy", when=barssince(flag_exit_any_flag_long)<barssince(long_entry), limit=valuewhen(flag_exit_any_flag_long,close,0), qty_percent=100, stop=longStop, alert_message=closelong_alert_msg)
+
+    strategy.entry("Sell", strategy.short, when=short_entry, alert_message=sell_alert_msg)
+    strategy.exit("Exit Sell", from_entry="Sell", when=barssince(flag_exit_any_flag_short)<barssince(short_entry), limit=valuewhen(flag_exit_any_flag_short,close,0), qty_percent=100, stop=shortStop, alert_message=closeshort_alert_msg)  
+// else if exit_style == "Basis Crossdowns" // Purple Triangles
+//    ...

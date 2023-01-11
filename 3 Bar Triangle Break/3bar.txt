@@ -1,0 +1,34 @@
+//@version=5
+
+////Current bar's High is less than the 3rd bar's High///
+/// and Current bar's Low to be higher the 3rd bar's Low.////
+////This then predicts the market might breakout to new levels ////
+///within 2-3 of the next coming bars///
+////Entry occurs when have two inside days and close break candle three high/low//
+//If need more information recommnd google search/////
+
+strategy("3 Bar Triangle Breakout", overlay=true)
+///BREAK = (low>low[2] and low[1]>low[2] and high<high[2] and high[1]<high[2])
+i_n = input.int(2, 'Stop Bars')
+i_long = input.bool(true, 'show long')
+i_short = input.bool(false, 'show short')
+//barcolor(BREAK? #FFEB3B : na )
+var ENTRYLONG = false
+var ENTRYSHORT = false
+////ENTRY///
+PHIGH=(high[3])
+PLOW=(low[3])
+ENTRYLONG := (close>open and close>close[1] and close>high[1] and low[1]>low[3] and low[2]>low[3] and high[1]<high[3] and high[2]<high[3])
+ENTRYSHORT:= (close<open and close<close[1] and close<low[1]  and low[1]>low[3] and low[2]>low[3] and high[1]<high[3] and high[2]<high[3])
+plotshape(ENTRYLONG, title="Break",location=location.belowbar, color=#00E676, style=shape.arrowup, text="BB")
+plotshape(ENTRYSHORT, title="Break",location=location.abovebar, color=#FF5252, style=shape.arrowdown, text="BB")
+
+if ENTRYLONG and i_long
+    strategy.entry('long', strategy.long)
+if ENTRYSHORT and i_short
+    strategy.entry('short', strategy.short)
+
+if ENTRYLONG[i_n] == true
+    strategy.close('long')
+if ENTRYSHORT[i_n] == true
+    strategy.close('short')

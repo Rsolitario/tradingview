@@ -1,5 +1,5 @@
 //@version=5
-indicator("Williams Fractals", shorttitle="Fractals", format=format.price, precision=0, overlay=true)
+indicator("Williams Fractals", shorttitle="Fractals RD", format=format.price, precision=0, overlay=true)
 // Define "n" as the number of periods and keep a minimum value of 2 for error handling.
 n = input.int(title="Periods", defval=2, minval=2)
 GP2 = "Panel"
@@ -7,9 +7,11 @@ showDisplay = input(true,"Show Display Pane", group = GP2)
 string  i_tableYpos = input.string("top", "Display position", inline = "11", options = ["top", "middle", "bottom"], group = GP2)
 string  i_tableXpos = input.string("right", "", inline = "11", options = ["left", "center", "right"], group = GP2)
 GP3 = "tickets"
+//symbol1 = ticker.new("BINANCE", "BTCUSDT", syminfo.session)
 symbol1 = ticker.new("NSE", "NIFTY", syminfo.session)
 symbol2 = ticker.new("NSE", "BANKNIFTY", syminfo.session)
-res = input.timeframe(title="Resolution",defval="60", group=GP3)
+res = input.timeframe(title="Resolution",defval="5", group=GP3)
+
 
 upFractal_func() =>
     // UpFractal
@@ -58,7 +60,6 @@ downFractal = downFractal_func()
 plotshape(downFractal, style=shape.triangledown, location=location.belowbar, offset=-n, color=#F44336, size = size.tiny)
 plotshape(upFractal, style=shape.triangleup,   location=location.abovebar, offset=-n, color=#009688, size = size.tiny)
 
-
 nifty_up = request.security(symbol1, res, expression = upFractal_func())
 nifty_down = request.security(symbol1, res, expression = downFractal_func())
 
@@ -72,20 +73,34 @@ low_bn = request.security(symbol2, res, expression=low[n])
 
 var close_nifty = 0.0
 var close_bn = 0.0
+var open_nifty = 0.0
+var open_bn = 0.0
 close_nifty := request.security(symbol1, res, expression=close)
+open_nifty := request.security(symbol1, res, expression=open)
 close_bn := request.security(symbol2, res, expression=close)
+open_bn := request.security(symbol2, res, expression=open)
 //timeLeft = (time_close - timenow) / 1000
 time_close_nifty = request.security(symbol1, res, expression=time_close)
 timenow_nifty = request.security(symbol1, res, expression=timenow)
 time_close_bn = request.security(symbol2, res, expression=time_close)
 timenow_bn = request.security(symbol2, res, expression=timenow)
 
+var line lg = na
+var line lr = na
+
 var max_ = 0.0
 var min_ = 0.0
 if upFractal
     max_ := high[n]
+    lg := line.new(bar_index[1500], max_, bar_index, max_, color=color.green, extend=extend.right, width=2)
+    line.delete(lg[n])
 if downFractal
     min_ := low[n]
+    lr := line.new(bar_index[1500], min_, bar_index, min_, color=color.red, extend=extend.right, width=2)
+    line.delete(lr[n])
+
+var flag_nifty = ''
+var flag_bn = ''
 
 var max_nifty_up = 0.0
 var min_nifty_down = 0.0
@@ -94,52 +109,75 @@ if nifty_up
 if nifty_down
     min_nifty_down := low_nifty
     
+if open_nifty > max_nifty_up or open_nifty < min_nifty_down
+    flag_nifty := 'N'
+else
+    if close_nifty > max_nifty_up or close_nifty < min_nifty_down
+        flag_nifty := 'Y'
+        alert('Active Flag Nifty', alert.freq_once_per_bar)
+    else
+        flag_nifty := 'N'
+    
 var max_bn_up = 0.0
 var min_bn_down = 0.0
 if bn_up
     max_bn_up := high_bn
 if bn_down
     min_bn_down := low_bn
+
+if open_bn > max_bn_up or open_bn < min_bn_down
+    flag_bn := 'N'
+else
+    if close_bn >  max_bn_up or close_bn < min_bn_down
+        flag_bn := 'Y'
+        alert('Active Flag BN', alert.freq_once_per_bar)
+    else
+        flag_bn := 'N'
     
 var trigger_nifty = ''
 var trigger_bn = ''
-timeLeft_nifty = (time_close_nifty - timenow_nifty) / 1000
-timeLeft_bn = (time_close_bn - timenow_bn) / 1000
+timeLeft = (time_close - timenow) / 1000
+// timeLeft_nifty = (time_close_nifty - timenow_nifty) / 1000
+// timeLeft_bn = (time_close_bn - timenow_bn) / 1000
 
-if close_nifty[1] > max_nifty_up 
+if (close_nifty > max_nifty_up) and (timeLeft <= 0) 
     trigger_nifty := 'BUY'
     alert('BUY NIFTY', alert.freq_once_per_bar)
-else
-    if close_nifty[1] < min_nifty_down 
-        trigger_nifty := 'SELL'
-        alert('SELL NIFTY', alert.freq_once_per_bar)
-    else
-        trigger_nifty := 'NA'
-if close_bn[1] > max_bn_up 
+if (close_nifty < min_nifty_down) and (timeLeft <= 0)   
+    trigger_nifty := 'SELL'
+    alert('SELL NIFTY', alert.freq_once_per_bar)
+if (close_nifty < max_nifty_up and close_nifty > min_nifty_down) and (timeLeft <= 0)
+    trigger_nifty := 'NA'
+        
+if (close_bn > max_bn_up)  and (timeLeft <= 0) 
     trigger_bn := 'BUY'
     alert('BUY BANCKNIFTY', alert.freq_once_per_bar)
-else
-    if close_bn[1] < min_bn_down 
-        trigger_bn := 'SELL'
-        alert('SELL BANCKNIFTY', alert.freq_once_per_bar)
-    else
-        trigger_bn := 'NA'
+if (close_bn < min_bn_down) and (timeLeft <= 0) 
+    trigger_bn := 'SELL'
+    alert('SELL BANCKNIFTY', alert.freq_once_per_bar)
+if (close_bn < max_bn_up and close_bn > min_bn_down) and (timeLeft <= 0)
+    trigger_bn := 'NA'
 
-var label l = na
-l := label.new(bar_index, high, text = str.tostring(upFractal) + ' y '+ str.tostring(downFractal) + str.tostring(max_) + ' ' + str.tostring(min_), color= color.blue)
-label.delete(l[1])
-var table panel = table.new(i_tableYpos + "_" + i_tableXpos, 4, 30, border_width = 1)
+
+// var label l = na
+// l := label.new(bar_index, high, text = str.tostring(upFractal) + ' y '+ str.tostring(downFractal) + str.tostring(max_) + ' ' + str.tostring(min_), color= color.blue)
+// label.delete(l[1])
+var table panel = table.new(i_tableYpos + "_" + i_tableXpos, 10, 30, border_width = 1)
 if showDisplay
     table.cell(panel, 0, 0, "Fractal", bgcolor = color.fuchsia, text_color = color.white)
     table.cell(panel, 1, 0, "Buy Sell", bgcolor = color.fuchsia, text_color = color.white)
-    table.cell(panel, 2, 0, "UpFractalHigh", bgcolor=color.fuchsia, text_color=color.white)
-    table.cell(panel, 3, 0, "DownFractalLow", bgcolor=color.fuchsia, text_color=color.white)
+    table.cell(panel, 2, 0, "Flag", bgcolor = color.fuchsia, text_color = color.white)
+    table.cell(panel, 3, 0, "UpFractalHigh", bgcolor=color.fuchsia, text_color=color.white)
+    table.cell(panel, 4, 0, "DownFractalLow", bgcolor=color.fuchsia, text_color=color.white)
     table.cell(panel, 0, 1, "NIFTY", bgcolor=color.fuchsia, text_color=color.white)
     table.cell(panel, 1, 1, trigger_nifty, bgcolor=color.gray, text_color=color.white)
-    table.cell(panel, 2, 1, str.tostring(max_nifty_up), bgcolor=color.gray, text_color=color.white)
-    table.cell(panel, 3, 1, str.tostring(min_nifty_down), bgcolor=color.gray, text_color=color.white)
+    table.cell(panel, 2, 1, flag_nifty, bgcolor=color.gray, text_color=color.white)
+    table.cell(panel, 3, 1, str.tostring(max_nifty_up), bgcolor=color.gray, text_color=color.white)
+    table.cell(panel, 4, 1, str.tostring(min_nifty_down), bgcolor=color.gray, text_color=color.white)
+    
     table.cell(panel, 0, 2, "NB", bgcolor=color.fuchsia, text_color=color.white)
     table.cell(panel, 1, 2, trigger_bn, bgcolor=color.gray, text_color=color.white)
-    table.cell(panel, 2, 2, str.tostring(max_bn_up), bgcolor=color.gray, text_color=color.white)
-    table.cell(panel, 3, 2, str.tostring(min_bn_down), bgcolor=color.gray, text_color=color.white)
+    table.cell(panel, 2, 2, flag_bn, bgcolor=color.gray, text_color=color.white)
+    table.cell(panel, 3, 2, str.tostring(max_bn_up), bgcolor=color.gray, text_color=color.white)
+    table.cell(panel, 4, 2, str.tostring(min_bn_down), bgcolor=color.gray, text_color=color.white)
 

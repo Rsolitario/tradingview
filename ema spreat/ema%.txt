@@ -1,0 +1,20 @@
+//@version=5
+indicator("ema%", overlay=false)
+i_src = input.source(close, "Source")
+i_ema1 = input.int(5, "length Ema", group="EMA")
+i_res = input.timeframe('15', "Resolution", group="EMA")
+i_alert = input.float(1, '% up or down', group="alert")
+ema(src, length)=>
+    ta.ema(src, length)
+e = request.security(syminfo.tickerid, i_res, ema(i_src, i_ema1))
+
+plot(i_src - e, color=i_src > e? color.green : color.red, style=plot.style_histogram, linewidth=5)
+var label labelHigh = na
+p_f = 100 - (e * 100/ i_src)
+labelHigh := label.new(bar_index, 70, str.tostring(p_f, '#.##') + ' %', color = i_src > e ? color.green : color.red, textcolor=color.white)
+label.delete(labelHigh[1])
+
+if p_f > 0 and i_alert > p_f
+    alert('threshold + ' + str.tostring(i_alert), alert.freq_once_per_bar)
+if p_f < 0 and -i_alert < p_f
+    alert('threshold ' + str.tostring(-i_alert), alert.freq_once_per_bar)

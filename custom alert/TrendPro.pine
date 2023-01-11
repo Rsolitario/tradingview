@@ -1,0 +1,267 @@
+// This source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © EtherMatt
+// @version=5
+
+//---------------------------------//Trend Trader STC Strategy\\---------------------------------\\
+
+strategy('Trend Pro', process_orders_on_close=true, overlay = true)
+
+//---------------------------------//Options\\---------------------------------\\
+
+// Strategy Variables
+showsession = input.bool(defval=false, title='', inline='Session')
+session2 = input.session(defval='0000-0000', title='Session Timings(to avoid trades)', inline='Session')
+rr = input.float(defval=1.5, minval=0.1, step = 0.1, title = "Risk : Reward ", group = "Strategy Options", tooltip='Change the Risk to Reward for Take Profit')
+lookback = input.int(defval=5, minval=2, step=1, title='Swing High/Low SL', group='Strategy Options', tooltip='Change the lookback period for swing high/low')
+
+// EMA and Timefilter
+var g_filter = 'Filter Settings'
+emaFilter = input.int(title='EMA Filter', defval=200, group=g_filter, tooltip='EMA length to filter trades - set to zero to disable')
+i_startTime = input.time(title='Start Date Filter', defval=timestamp('01 Jan 2022 13:30 +0000'), group=g_filter, tooltip='Date & time to begin trading from')
+i_endTime = input.time(title='End Date Filter', defval=timestamp('01 May 2025 19:30 +0000'), group=g_filter, tooltip='Date & time to stop trading')
+
+// Backtester Settings
+var g_tester = 'Backtester Settings'
+startBalance = input.float(title='Starting Balance', defval=10000.0, group=g_tester, tooltip='Your starting balance for the custom inbuilt tester system')
+riskPerTrade = input.float(title='Risk Per Trade', defval=1.0, group=g_tester, tooltip='Your desired % risk per trade (as a whole number)')
+drawTester = input.bool(title='Draw Backtester', defval=true, group=g_tester, tooltip='Turn on/off inbuilt backtester display')
+
+//-----------------------------//Custom Functions\\---------------------------------\\
+
+// Get indicator Values
+ema = ta.ema(close, emaFilter == 0 ? 1 : emaFilter)
+
+//---------------------------------//Trend Trader Logic\\---------------------------------\\
+
+Length = input.int(21, minval=1, group= 'Trend Trader Settings')
+Multiplier = input.float(3, minval=0.000001, group= 'Trend Trader Settings')
+avgTR = ta.wma(ta.atr(1), Length)
+highestC = ta.highest(Length)
+lowestC = ta.lowest(Length)
+hiLimit = highestC[1] - avgTR[1] * Multiplier
+loLimit = lowestC[1] + avgTR[1] * Multiplier
+ret = 0.0
+pos = 0.0
+iff_1 = close < loLimit and close < hiLimit ? loLimit : nz(ret[1], close)
+ret := close > hiLimit and close > loLimit ? hiLimit : iff_1
+iff_2 = close < ret ? -1 : nz(pos[1], 0)
+pos := close > ret ? 1 : iff_2
+barcolor(pos == -1 ? color.red : pos == 1 ? color.green : color.blue)
+plot(ret, color=color.new(color.blue, 0), title='Trend Trader Filter')
+
+RedColorChange = pos== -1 and pos[1]==1
+GreenColorChange = pos== 1 and pos[1]==-1
+
+alertcondition(GreenColorChange, title = "Color Change -> Green", message = "Trend Trader change of Color to Green!")
+alertcondition(RedColorChange, title = "Color Change -> Red", message = "Trend Trader change of Color to Red!")
+
+//---------------------------------//STC Code\\---------------------------------\\
+
+// STC Inputs
+EEEEEE = input(12, 'Length', group= 'STC Settings')
+BBBB = input(26, 'FastLength', group= 'STC Settings')
+BBBBB = input(50, 'SlowLength', group= 'STC Settings')
+
+ll= input(25, "Upper Limit", group= 'STC Settings')
+ul= input(75, "Lower Limit", group= 'STC Settings')
+
+float a = ll
+float b = ul
+
+//Colors
+green = #05D50E
+red = #FF0000
+
+color stcBullColorInput = input.color(green, "Bull", group= 'Color Settings')
+color stcBearColorInput = input.color(red, "Bear", group= 'Color Settings')
+
+AAAA(BBB, BBBB, BBBBB) =>
+    fastMA = ta.ema(BBB, BBBB)
+    slowMA = ta.ema(BBB, BBBBB)
+    AAAA = fastMA - slowMA
+    AAAA
+
+AAAAA(EEEEEE, BBBB, BBBBB) =>
+    AAA = input(0.5, title= 'Multiplier', group= 'STC Settings')
+    var CCCCC = 0.0
+    var DDD = 0.0
+    var DDDDDD = 0.0
+    var EEEEE = 0.0
+    BBBBBB = AAAA(close, BBBB, BBBBB)
+    CCC = ta.lowest(BBBBBB, EEEEEE)
+    CCCC = ta.highest(BBBBBB, EEEEEE) - CCC
+    CCCCC := CCCC > 0 ? (BBBBBB - CCC) / CCCC * 100 : nz(CCCCC[1])
+    DDD := na(DDD[1]) ? CCCCC : DDD[1] + AAA * (CCCCC - DDD[1])
+    DDDD = ta.lowest(DDD, EEEEEE)
+    DDDDD = ta.highest(DDD, EEEEEE) - DDDD
+    DDDDDD := DDDDD > 0 ? (DDD - DDDD) / DDDDD * 100 : nz(DDDDDD[1])
+    EEEEE := na(EEEEE[1]) ? DDDDDD : EEEEE[1] + AAA * (DDDDDD - EEEEE[1])
+    EEEEE
+
+mAAAAA = AAAAA(EEEEEE, BBBB, BBBBB)
+mColor = mAAAAA > mAAAAA[1] ? color.new(stcBullColorInput, 0) : color.new(stcBearColorInput, 0)
+
+//---------------------------------//Logic\\---------------------------------\\
+
+
+// Check Sessions to avoid trades
+session = time('1', session2 + string(':1234567'), 'GMT+8')
+sessioncond = showsession ? not session : true
+
+// See if this bar's time happened within date filter
+dateFilter = time >= i_startTime and time <= i_endTime
+
+// Check EMA Filter
+emaFilterLong = emaFilter == 0 or close > ema
+emaFilterShort = emaFilter == 0 or close < ema
+
+// Check STC
+bullSTC = mAAAAA > mAAAAA[1]
+bearSTC = mAAAAA < mAAAAA[1]
+
+// Check Trend Trader
+bullTrend = pos== 1 and pos[1]== -1
+bearTrend = pos== -1 and pos[1]== 1
+
+// Determine if we have a valid setup
+validBullSetup = bullTrend and emaFilterLong and sessioncond and bullSTC
+validBearSetup = bearTrend and emaFilterShort and sessioncond and bearSTC
+
+// Check if we have confirmation for our setup
+validLongEntry = validBullSetup and strategy.position_size == 0 and dateFilter and barstate.isconfirmed
+validShortEntry = validBearSetup and strategy.position_size == 0 and dateFilter and barstate.isconfirmed
+
+
+//-------------//Entry & Exit Execution Code\\-------------\\
+i_alert_long = input.string('Long Signal - Entry Price: {{close}}', 'Message Long Signal', group="Message")
+i_alert_Short = input.string('Short Signal - Entry Price:{{close}}', 'Message Short Signal', group = "Message")
+i_alert_exit_long = input.string('Exit Long', 'Message Exit Long', group="Message")
+i_alert_exit_short = input.string('Exit Short', 'Message Exit Short', group="Message")
+
+low5 = ta.lowest(low, lookback)
+high5 = ta.highest(high, lookback)
+
+var profit = 0.0
+var loss = 0.0
+var entry = 0.0
+
+
+if validLongEntry
+    loss := close-low5 
+    entry := close
+    profit := loss*rr  
+    strategy.entry('Long', strategy.long, alert_message=i_alert_long)
+    alert(syminfo.tickerid + ' Long Signal - Entry Price: ' + str.tostring(close) + ' Timeframe: ' + timeframe.period, alert.freq_once_per_bar_close)
+  
+  
+if validShortEntry
+    loss :=  high5-close 
+    entry := close
+    profit := loss*rr  // tp @ distance entry -> sl * risk/reward   
+    strategy.entry('Short', strategy.short, alert_message=i_alert_Short)
+    alert(syminfo.tickerid + ' Short Signal - Entry Price: ' + str.tostring(close) + ' Timeframe: ' + timeframe.period, alert.freq_once_per_bar_close)
+    
+    
+strategy.exit('Exit Long', 'Long', qty_percent=100, profit=profit / syminfo.mintick, loss=loss / syminfo.mintick, alert_message=i_alert_exit_long)
+strategy.exit('Exit Short', 'Short', qty_percent=100, profit=profit / syminfo.mintick, loss=loss / syminfo.mintick, alert_message=i_alert_exit_short)
+    
+// Draw EMA if it's enabled
+plot(emaFilter == 0 ? na : ema, color=emaFilterLong ? color.green : color.red, linewidth=2, title='EMA')
+
+
+//---------------------------------//Plots\\---------------------------------\\
+
+
+// Draw trade data
+a1=plot( validShortEntry ? entry+loss : na, title='Short Trade Stop Price', color=color.new(color.red, 0), style=plot.style_linebr, linewidth = 3)
+a2=plot( validShortEntry ? entry : na, title='Short Trade Entry Price', color=color.new(color.white, 50), style=plot.style_linebr, linewidth = 3)
+a3=plot( validShortEntry ? entry-profit : na, title='Short Trade Target Price', color=color.new(color.green, 0), style=plot.style_linebr, linewidth = 3)
+
+fill(a1,a2,color.new(color.red,60))
+fill(a2,a3,color.new(color.green,60))
+
+// Draw trade data
+l1=plot( validLongEntry ? entry-loss : na, title='Long Trade Stop Price', color=color.new(color.red, 0), style=plot.style_linebr, linewidth = 3)
+l2=plot( validLongEntry ? entry : na, title='Long Trade Entry Price', color=color.new(color.white, 50), style=plot.style_linebr, linewidth = 3)
+l3=plot( validLongEntry ? entry+profit : na, title='Long Trade Target Price', color=color.new(color.green, 0), style=plot.style_linebr, linewidth = 3)
+
+fill(l1,l2,color.new(color.red,60))
+fill(l2,l3,color.new(color.green,60))
+
+//plotshape(validlongentry ? entry : na, title='Sell Label', text='Sell', location=location.absolute, style=shape.labeldown, size=size.large, color=color.red, textcolor=color.new(color.white, 0), location=location.top)
+plotshape( validShortEntry ? high + ta.atr(20) : na, color=color.red, style=shape.labeldown, text="SELL", textcolor=color.white, location=location.absolute, size=size.large)
+plotshape( validLongEntry ? low - ta.atr(1) : na, color=color.green, style=shape.labelup, text="BUY", textcolor=color.white, location=location.absolute, size=size.large)
+
+
+//---------------------------------//Dashbaord\\---------------------------------\\
+
+// Custom function to truncate (cut) excess decimal places
+truncate(_number, _decimalPlaces) =>
+    _factor = math.pow(10, _decimalPlaces)
+    int(_number * _factor) / _factor
+
+// --- BEGIN TESTER CODE --- //
+// Declare performance tracking variables
+var balance = startBalance
+var drawdown = 0.0
+var maxDrawdown = 0.0
+var maxBalance = 0.0
+var totalPips = 0.0
+var totalWins = 0
+var totalLoss = 0
+
+// Detect winning trades
+if strategy.wintrades != strategy.wintrades[1]
+    balance += riskPerTrade / 100 * balance * rr
+    //totalPips += math.abs(t_entry - t_target)
+    totalWins += 1
+    if balance > maxBalance
+        maxBalance := balance
+        maxBalance
+
+// Detect losing trades
+if strategy.losstrades != strategy.losstrades[1]
+    balance -= riskPerTrade / 100 * balance
+    //totalPips -= math.abs(t_entry - t_stop)
+    totalLoss += 1
+    // Update drawdown
+    drawdown := balance / maxBalance - 1
+    if drawdown < maxDrawdown
+        maxDrawdown := drawdown
+        maxDrawdown
+        
+// ProfitFactor returns the strategy's current profit factor,
+ProfitFactor = strategy.grossprofit / strategy.grossloss
+
+maxloss = math.round(maxDrawdown*(-100)/riskPerTrade)
+
+winrate = (strategy.wintrades / strategy.closedtrades) * 100
+
+initbalance = startBalance
+
+
+// Prepare stats table
+var table testTable = table.new(position.top_right, 5, 3, border_width=1)
+f_fillCell(_table, _column, _row, _title, _value, _bgcolor, _txtcolor) =>
+    _cellText = _title + '\n' + _value
+    table.cell(_table, _column, _row, _cellText, bgcolor=_bgcolor, text_color=_txtcolor)
+
+// Draw stats table
+var bgcolor = color.new(color.black, 0)
+if drawTester
+    if barstate.islastconfirmedhistory
+        // Update table
+        dollarReturn = balance - startBalance
+        f_fillCell(testTable, 0, 0, 'Backtest', str.tostring(syminfo.tickerid) , color.blue, color.white)
+        f_fillCell(testTable, 0, 1, 'Trend Trader', str.tostring(timeframe.period) + 'M' , color.blue, color.white)
+        f_fillCell(testTable, 1, 0, 'Total Trades:', str.tostring(strategy.closedtrades), bgcolor, color.white)
+        f_fillCell(testTable, 1, 1, 'Win Rate:', str.tostring(truncate(winrate, 2)) + '%', winrate > 40 ? color.green : color.red, color.white)// bgcolor, color.white)
+        f_fillCell(testTable, 2, 0, 'Starting:', '$' + str.tostring(startBalance), bgcolor, color.white)
+        f_fillCell(testTable, 2, 1, 'Ending:', '$' + str.tostring(truncate(balance, 2)), balance > initbalance ? color.green : color.red, color.white)
+        f_fillCell(testTable, 3, 0, 'Profit Factor:', str.tostring(truncate(ProfitFactor, 2)), ProfitFactor > 0 ? color.green : color.red, color.white)
+        f_fillCell(testTable, 3, 1, 'Consec. Loss:', str.tostring(maxloss), maxloss <= 5 ? color.green : color.red, color.white)//color.new(color.red,50), bgcolor, color.white)
+        f_fillCell(testTable, 4, 0, 'Return:', (dollarReturn > 0 ? '+' : '') + str.tostring(truncate(dollarReturn / startBalance * 100, 2)) + '%', dollarReturn > 0 ? color.green : color.red, color.white)
+        f_fillCell(testTable, 4, 1, 'Max DD:', str.tostring(truncate(maxDrawdown * 100, 2)) + '%', color.red, color.white)
+
+
+

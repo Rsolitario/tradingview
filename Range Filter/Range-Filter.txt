@@ -1,0 +1,333 @@
+//modifications and deletions.
+//@version=4
+// Backtest for "Range Filter [DW]"
+// Original Indicator:   DonovanWall
+// Actual Study Version: @gu5tavo71 for ismaelsaiz (@ismaelsaiz for Freelancer)
+// v2.1.3, 2021.02.13
+// I am using part of this code published by @PineCoders, and Public Library
+// Disclaimer: I am not a financial advisor.
+//             For purpose educate only. Use at your own risk.
+strategy (title = "Range Filter v2", overlay = true)
+
+
+// ---------   Inputs                    |       "============================="
+i_showRF     = input(defval = true,      title = "======= Range Filter ========")//add
+i_type       = input(defval = "Type 1",  title = "Filter Type"                  , options = ["Type 1", "Type 2"])
+i_srcMov     = input(defval = "Close",   title = "Movement Source"              , options = ["Wicks", "Close"])
+i_rngSize    = input(defval = 2.618,     title = "Range Size"                   , minval = 0.0000001)
+i_rngScale   = input(defval = "Average Change", title = "Range Scale"           , options = ["Points", "Pips", "Ticks", "% of Price", "ATR", "Average Change", "Standard Deviation", "Absolute"])
+i_rngPer     = input(defval = 14,        title = "Range Period"                 , minval = 1)//default=14
+i_smoothRng  = input(defval = true,      title = "Smooth Range"                 )
+i_smoothPer  = input(defval = 27,        title = "Smoothing Period"             , minval = 1)
+i_avVals     = input(defval = false,     title = "Average Filter Changes"       )//default=false
+i_avSamples  = input(defval = 2,         title = "Number Of Changes To Average" , minval = 1)//default=2
+i_showCh     = input(defval = false,     title = "Show Channel"                 )//add
+
+// ---------   Target (DCA)   --------- //
+i_showTarget = input(defval = true,      title = "========== Target ===========")
+o_src1       = "open"
+o_src2       = "high"
+o_src3       = "low"
+o_src4       = "close"
+o_src5       = "hl2"
+o_src6       = "hlc3"
+o_src7       = "ohlc4"
+i_src        = input(defval = o_src4,    title = "Source"                       , options =[o_src1, o_src2, o_src3, o_src4, o_src5, o_src6, o_src7])
+i_lvlUpCap1  = input(10,                 title = "% Primera Salida de Capital"              , type = input.float, step = 0.1)
+i_lvlUp1     = input(1.0,                  title = "% Take Profit #1"           , type = input.float, step = 0.1)
+i_lvlUpCap2  = input(30,                 title = "% Segunda Salida de Capital"             , type = input.float, step = 0.1)
+i_lvlUp2     = input(2.0,                 title = "% Take Profit #2"          , type = input.float, step = 0.1)
+i_lvlUpCap3  = input(50,                 title = "% Tercera Salida de Capital"              , type = input.float, step = 0.1)
+i_lvlUp3     = input(3.0,                title = "% Take Profit #3"           , type = input.float, step = 0.1)
+// i_lvlUpCap4  = input(20,                 title = "Fourth % Capital"                    , type = input.float, step = 0.1)
+// i_lvlUp4     = input(6.0,                title = "Fourth Profit Level"          , type = input.float, step = 0.1)
+i_lvlDn1     = input(-0.5,               title = "% Rebuy1"          , type = input.float, step = 0.1)
+i_lvlDnCap1  = input(10,                 title = "% Rebuy1 Capital"                    , type = input.float, step = 0.1)
+// i_lvlDn2     = input(-1.0,               title = "Second Reverse Level"            , type = input.float, step = 0.1)
+// i_lvlDnCap2  = input(15,                 title = "% Capital"                    , type = input.float, step = 0.1)
+// i_lvlDn3     = input(-1.5,               title = "Third Reverse Level"             , type = input.float, step = 0.1)
+// i_lvlDnCap3  = input(45,                 title = "% Capital"                    , type = input.float, step = 0.1)
+i_showPeriod = input(defval = false,     title = "========== Period ===========")
+o_start      = timestamp("01 Jan 1999 00:00")
+o_end        = timestamp("31 Dec 2099 00:00")
+i_startPer   = input(defval = o_start,   title = "Start Time"                   , type = input.time)
+i_endPer     = input(defval = o_end,     title = "End Time"                     , type = input.time)
+i_showAlert  = input(defval = false,     title = "Show Alert"                   )
+
+// ---------   Range Filter   --------- //
+// ---------   Funtions
+//Conditional Sampling EMA Function 
+f_condEMA(x, cond, n)=>
+    var val      = array.new_float(0)
+    var ema_val  = array.new_float(1)
+    if cond
+        array.push(val, x)
+        if array.size(val) > 1
+            array.remove(val, 0)
+        if na(array.get(ema_val, 0))
+            array.fill(ema_val, array.get(val, 0))
+        array.set(ema_val, 0, (array.get(val, 0) - array.get(ema_val, 0))*(2/(n + 1)) + array.get(ema_val, 0))
+    EMA          = array.get(ema_val, 0)
+    EMA
+//Conditional Sampling SMA Function
+f_condSMA(x, cond, n)=>
+    var vals     = array.new_float(0)
+    if cond
+        array.push(vals, x)
+        if array.size(vals) > n
+            array.remove(vals, 0)
+    SMA          = array.avg(vals)
+    SMA
+//Standard Deviation Function
+f_Stdev(x, n)=>
+    sqrt(f_condSMA(pow(x, 2), 1, n) - pow(f_condSMA(x, 1, n), 2))
+//Range Size Function
+f_rngSize(x, scale, qty, n)=> 
+    ATR          = f_condEMA(tr(true), 1, n)
+    AC           = f_condEMA(abs(x - x[1]), 1, n)
+    SD           = f_Stdev(x, n)
+    f_rngSize    = scale=="Pips" ? qty*0.0001 : scale=="Points" ? qty*syminfo.pointvalue : scale=="% of Price" ? close*qty/100 : scale=="ATR" ? qty*ATR :
+               scale=="Average Change" ? qty*AC : scale=="Standard Deviation" ? qty*SD : scale=="Ticks" ? qty*syminfo.mintick : qty   
+//Two Type Range Filter Function
+f_rngFilter(h, l, rng_, n, type, smooth, sn, av_rf, av_n)=>
+    rng_smooth   = f_condEMA(rng_, 1, sn)
+    r            = smooth ? rng_smooth : rng_
+    var rfilt    = array.new_float(2, (h + l)/2)
+    array.set(rfilt, 1, array.get(rfilt, 0))
+    if type == "Type 1"
+        if h - r > array.get(rfilt, 1)
+            array.set(rfilt, 0, h - r)
+        if l + r < array.get(rfilt, 1)
+            array.set(rfilt, 0, l + r)
+    if type == "Type 2"
+        if h >= array.get(rfilt, 1) + r
+            array.set(rfilt, 0, array.get(rfilt, 1) + floor(abs(h - array.get(rfilt, 1))/r)*r)
+        if l <= array.get(rfilt, 1) - r
+            array.set(rfilt, 0, array.get(rfilt, 1) - floor(abs(l - array.get(rfilt, 1))/r)*r)
+    rng_filt1    = array.get(rfilt, 0)
+    hi_band1     = rng_filt1 + r
+    lo_band1     = rng_filt1 - r
+    rng_filt2    = f_condEMA(rng_filt1, rng_filt1 != rng_filt1[1], av_n)
+    hi_band2     = f_condEMA(hi_band1, rng_filt1 != rng_filt1[1], av_n)
+    lo_band2     = f_condEMA(lo_band1, rng_filt1 != rng_filt1[1], av_n)
+    f_rngFilter  = av_rf ? rng_filt2 : rng_filt1
+    hi_band      = av_rf ? hi_band2 : hi_band1
+    lo_band      = av_rf ? lo_band2 : lo_band1
+    [hi_band, lo_band, f_rngFilter]
+
+// ---------   Calculations
+// ---------   Range Filter   --------- //
+hiVal        = i_srcMov == "Wicks" ? high : close
+lowVal       = i_srcMov == "Wicks" ? low  : close
+[hBand, lBand, filt] =
+               f_rngFilter(hiVal,  lowVal,
+               f_rngSize ((hiVal + lowVal)/2, i_rngScale, i_rngSize, i_rngPer),
+               i_rngPer, i_type, i_smoothRng, i_smoothPer, i_avVals, i_avSamples)
+rfDir        = 0.0
+rfDir       := filt[1] < filt ?  1 :
+               filt[1] > filt ? -1 :
+               nz(rfDir[1])
+rfUp         = rfDir ==  1 ? 1 : 0
+rfDn         = rfDir == -1 ? 1 : 0
+
+
+// ---------   Target (DCA)   --------- //
+//Source
+src          = i_src == "open"  ? open  :
+               i_src == "high"  ? high  :
+               i_src == "low"   ? low   :
+               i_src == "close" ? close :
+               i_src == "hl2"   ? hl2   :
+               i_src == "hlc3"  ? hlc3  : ohlc4
+// Period
+period       = time >= i_startPer and time <= i_endPer
+//Conditions
+condition    = 0                // la condicion en cero y siempre se mantiene en cero, no hay ninguna funcion de set
+
+entryLong    = period and rfDir ==  1// and rfDir[1] == -1
+entryShort   = period and rfDir == -1// and rfDir[1] ==  1
+
+
+// Take Profit (tp1)
+tp1Entry     = src * (i_lvlUp1/100) // precio close * (0.7/100)
+tp1Top       = src + tp1Entry
+tp1Bot       = src - tp1Entry
+tp1TopBuff   = valuewhen(entryLong,  tp1Top, 0)
+tp1BotBuff   = valuewhen(entryShort, tp1Bot, 0)
+tp1Line      = (entryLong ? tp1TopBuff : entryShort ? tp1BotBuff : na)
+
+tp1TopCross  = crossover  (src, tp1Line)
+// tp1BotCross  =  condition[1] == -1 and crossunder (src, tp1Line)
+tp1          = tp1TopCross// or tp1BotCross
+
+
+
+
+
+// Take Profit (tp2)
+tp2Entry     = src * ((i_lvlUp1 + i_lvlUp2)/100)
+tp2Top       = src + tp2Entry
+tp2Bot       = src - tp2Entry
+tp2TopBuff   = valuewhen(entryLong , tp2Top, 0)
+tp2BotBuff   = valuewhen(entryShort, tp2Bot, 0)
+tp2Line      = (entryLong ? tp2TopBuff : entryShort ? tp2BotBuff : na)
+tp2TopCross  = crossover  (src, tp2Line)
+// tp2BotCross  =  condition[1] == -1 and crossunder (src, tp2Line)
+tp2          = tp2TopCross// or tp2BotCross
+
+
+
+// Take Profit (tp3)
+tp3Entry     = src * ((i_lvlUp1 + i_lvlUp2 + i_lvlUp3)/100)
+tp3Top       = src + tp3Entry
+tp3Bot       = src - tp3Entry
+tp3TopBuff   = valuewhen(condition[1] !=  1 and entryLong , tp3Top, 0)
+tp3BotBuff   = valuewhen(condition[1] != -1 and entryShort, tp3Bot, 0)
+tp3Line      = (condition[1] == -1 and entryLong)  ? tp3TopBuff :
+               (condition[1] ==  1 and entryShort) ? tp3BotBuff:
+               (condition[1] ==  1 or  entryLong ) ? tp3TopBuff :
+               (condition[1] == -1 or  entryShort) ? tp3BotBuff: na
+tp3TopCross  =  condition[1] ==  3 and crossover  (src, tp3Line)
+tp3BotCross  =  condition[1] == -3 and crossunder (src, tp3Line)
+tp3          = tp3TopCross or tp3BotCross
+
+
+
+// Reverse (sl1)
+sl1Entry     = src * (i_lvlDn1/100)
+sl1Top       = src + sl1Entry
+sl1Bot       = src - sl1Entry
+sl1TopBuff   = valuewhen(entryLong,  sl1Top, 0)
+sl1BotBuff   = valuewhen(entryShort, sl1Bot, 0)
+sl1Line      = (entryLong ? sl1TopBuff: entryShort ? sl1BotBuff: na)
+sl1TopCross  =  condition[1] ==  1 and crossunder (src, sl1Line)
+sl1BotCross  =  condition[1] == -1 and crossover  (src, sl1Line)
+sl1          = sl1TopCross or sl1BotCross
+
+
+
+// Reverse (sl2)
+// sl2Entry     = src * (i_lvlDn2/100)
+// sl2Top       = src + sl2Entry
+// sl2Bot       = src - sl2Entry
+// sl2TopBuff   = valuewhen(condition[1] !=  1 and entryLong,  sl2Bot, 0)
+// sl2BotBuff   = valuewhen(condition[1] != -1 and entryShort, sl2Top, 0)
+// sl2Line      = (condition[1] == -1 and entryLong ) ? sl2TopBuff:
+               // (condition[1] ==  1 and entryShort) ? sl2BotBuff:
+               // (condition[1] ==  1 or  entryLong ) ? sl2TopBuff:
+               // (condition[1] == -1 or  entryShort) ? sl2BotBuff: na
+// sl2TopCross  =  condition[1] ==  1 and crossunder (src, sl2Line)
+// sl2BotCross  =  condition[1] == -1 and crossover  (src, sl2Line)
+// sl2          = sl2TopCross or sl2BotCross
+// // Reverse (sl3)
+// sl3Entry     = src * (i_lvlDn3/100)
+// sl3Top       = src + sl3Entry
+// sl3Bot       = src - sl3Entry
+// sl3TopBuff   = valuewhen(condition[1] !=  1 and entryLong,  sl3Bot, 0)
+// sl3BotBuff   = valuewhen(condition[1] != -1 and entryShort, sl3Top, 0)
+// sl3Line      = (condition[1] == -1 and entryLong ) ? sl3TopBuff:
+               // (condition[1] ==  1 and entryShort) ? sl3BotBuff:
+               // (condition[1] ==  1 or  entryLong ) ? sl3TopBuff:
+               // (condition[1] == -1 or  entryShort) ? sl3BotBuff: na
+// sl3TopCross  =  condition[1] ==  1 and crossunder (src, sl3Line)
+// sl3BotCross  =  condition[1] == -1 and crossover  (src, sl3Line)
+// sl3          = sl3TopCross or sl3BotCross
+
+//Conditions
+condition   := condition[1] ==  3 and tp3        ?  4 :
+               condition[1] ==  2 and tp2        ?  3 :
+               condition[1] ==  1 and tp1        ?  2 :
+               condition[1] !=  1 and entryLong  ?  1 :
+               condition[1] !=  0 and entryShort ? -1 :
+               nz(condition[1])
+               // condition[1] ==  1 and sl1        ? -2 :
+               // condition[1] == -2 and sl2        ? -3 :
+               // condition[1] == -3 and sl2        ? -4 :
+
+// buy          = condition[1] !=  1 and condition ==  1
+// sell         = condition[1] != -1 and condition ==  0
+
+// Position
+tpLine       = condition ==  1 ? tp1Line :
+               condition ==  2 ? tp2Line :
+               condition ==  3 ? tp3Line : na
+slLine       = condition ==  1 ? sl1Line : na
+               // condition == -2 ? sl2Line :
+               // condition == -3 ? sl3Line : na
+               
+               
+               
+               
+               
+buy          = entryLong and strategy.position_size == 0
+takeProfit1  = entryLong and strategy.opentrades    == 1 and condition ==  2 and tpLine[1] != tpLine
+takeProfit2  = entryLong and strategy.opentrades    == 2 and condition ==  3 and tpLine[1] != tpLine
+takeProfit3  = entryLong and strategy.opentrades    == 3 and condition ==  4 and tpLine[1] != tpLine
+rebuy1       = entryLong and strategy.opentrades    == 1 and condition == -1 and tpLine[1] != slLine
+sell         = entryShort and strategy.position_size == 0
+
+
+// ---------   Colors
+c_filt       = rfUp ? color.green :
+               rfDn ? color.red   : color.gray
+c_barCol     = rfUp and
+               (close > filt) ? (close > close[1] ? color.lime : color.green) :
+               rfDn and
+               (close < filt) ? (close < close[1] ? color.red : color.maroon) : color.white
+// c_tpLineUp   = rising  (tpLine, 1)
+// c_tpLineDn   = falling (tpLine, 1)
+c_tpLine     = rfUp       ? color.green :
+               rfDn       ? color.red   : color.gray
+
+// ---------   Plots
+p_filt       = plot(filt, title      = "Filter", color      = c_filt, linewidth  = 3, transp     = 0)
+p_hBand      = plot( i_showCh   ? hBand : na, title      = "High Band", color      = #05ff9b, transp     = 100)
+p_lBand      = plot( i_showCh   ? lBand : na, title      = "Low Band", color      = #ff0583, transp     = 100)
+fill( p_hBand, p_filt, title      = "High Band Fill", color      = #00b36b, transp     = 85)
+fill( p_lBand, p_filt, title      = "Low Band Fill", color      = #b8005d, transp     = 85)
+barcolor(c_barCol)
+
+
+//plot ( condition != 0 ? tpLine : na, title      = "Take Profit Line", color      = c_tpLine, linewidth  = 1, style      = plot.style_linebr)
+//plot( condition != 0 ? slLine : na, title      = "Reverse Line", color      = color.red, linewidth  = 1, style      = plot.style_linebr)
+
+plotshape( i_showAlert and (buy or tp1 or takeProfit2 or takeProfit3), title      = "Buy", text       = "Buy", color      = color.green, style      = shape.triangleup, size       = size.small, location   = location.belowbar)
+plotshape(  i_showAlert and tp1 and condition == 2 ? tp1Line : na, title      = "First Take Profit", text       = "First Take Profit", textcolor  = color.orange, color      = color.orange, transp     = 0, style      = shape.xcross, size       = size.small, location   = location.absolute)
+
+
+//if buy
+//strategy.entry("Long",strategy.long,comment = "Buy", when=buy)
+strategy.entry("venta", strategy.short, comment = "sell", when=sell)
+//strategy.exit('TP1','Long', limit = tp1Line, qty_percent = i_lvlUpCap1)
+//strategy.exit('TP2','Long',limit = tp2Line, qty_percent = i_lvlUpCap2)
+//strategy.exit('TP3','Long',limit = tp3Line, qty_percent = i_lvlUpCap3)
+//strategy.exit('ReBuy1','Long',stop = sl1Line,qty_percent = i_lvlDnCap1)
+// strategy.exit(
+  // 'ReBuy2',
+  // 'Long',
+  // stop        = sl2Line,
+  // qty_percent = i_lvlDnCap2)
+// strategy.exit(
+  // 'ReBuy3',
+  // 'Long',
+  // stop        = sl3Line,
+  // qty_percent = i_lvlDnCap3)
+//strategy.close_all(when = entryShort, comment = "Close all entries") //lo único bueno de todo el código
+
+//strategy.exit("TP1",'short',limit= tp1Line, qty_percent = i_lvlUpCap1)
+   
+//strategy.exit('TP1','short', limit = tp1Line, qty_percent = i_lvlUpCap1)
+//strategy.exit('TP2','short',limit = tp2Line, qty_percent = i_lvlUpCap2)
+//strategy.exit('TP3','short',limit = tp3Line, qty_percent = i_lvlUpCap3)
+//strategy.exit('ReBuy1','short',stop = sl1Line,qty_percent = i_lvlDnCap1)
+// strategy.exit(
+  // 'ReBuy2',
+  // 'Long',
+  // stop        = sl2Line,
+  // qty_percent = i_lvlDnCap2)
+// strategy.exit(
+  // 'ReBuy3',
+  // 'Long',
+  // stop        = sl3Line,
+  // qty_percent = i_lvlDnCap3)
+//strategy.close_all(when       = entryLong,comment    = "Close all entries") //lo único bueno de todo el código

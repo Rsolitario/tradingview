@@ -1,0 +1,71 @@
+/@version=4
+// study(title="Sweat Dreams", overlay=true)
+strategy(title="Sweat Dreams", shorttitle="Sweat Dreams", overlay=true, precision=6, pyramiding=0, initial_capital=200, currency="USD", default_qty_type=strategy.percent_of_equity, default_qty_value=99.0, commission_value=0.05)
+
+
+ksrc = input(defval= open, title="Kagi Source", type=input.source)
+krev = input(defval=0.001,  title="Kagi Reversal Size")
+ktf  = input(defval="20",    title="Kagi Timeframe")
+l = input(10,'lines wma')
+lsourse = input(close,'lines sourse')
+
+//-----------------------------------------------------------------------------------------------------------------------------------------------------------------
+//Definitions
+//-----------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+//Kagi
+lines = wma(lsourse,l)
+psrc    = lines
+kagisrc = kagi(syminfo.tickerid, krev) //kagisrc = kagi(tickerid, ksrc, krev)
+kagi    = security(kagisrc, ktf, ksrc)
+
+x = psrc > kagi ? true : false
+y = psrc < kagi ? true : false
+
+//Kagi Color
+// kagicolor = (psrc > kagi) ? lime : (psrc < kagi) ? red : na
+kagicolor = x ? color.lime : y ? color.red : na
+// k1 = (psrc > kagi) ? blue : white
+// k2 = (psrc < kagi) ? red : k1
+// kcol = k1 ? k1 : k2
+
+//-----------------------------------------------------------------------------------------------------------------------------------------------------------------
+//Plots
+//-----------------------------------------------------------------------------------------------------------------------------------------------------------------
+buy = x and not x[1] ? psrc : na
+sell = y and not y[1] ? psrc : na
+//Plots
+kagiplot  = plot(kagi,  color=color.white, title="Time Based Kagi Plot")
+kagiplot1  = plot(kagi,  color=color.white, title="Time Based Kagi Plot")
+priceplot = plot(close, color=color.black, title="Close Price")
+
+plot(lines, color=kagicolor, linewidth=2)
+plotshape( buy, color=color.lime, style=shape.arrowdown, text=".", size=size.normal )
+plotshape( sell, color=color.red, style=shape.arrowdown, text=":", size=size.normal )
+plot(psrc, color=kagicolor, linewidth=2)
+
+//Kagi Price Fill
+fill(kagiplot, priceplot, color=kagicolor, transp=80, title="Kagi Fill")
+
+fromMonth = input(defval = 1, title = "From Month", minval = 1)
+fromDay   = input(defval = 1, title = "From Day", minval = 1)
+fromYear  = input(defval = 2018, title = "From Year", minval = 2014)
+toMonth   = input(defval = 1, title = "To Month", minval = 1)
+toDay     = input(defval = 1, title = "To Day", minval = 1)
+toYear    = input(defval = 9999, title = "To Year", minval = 2014)
+
+
+strategy.entry("Buy", true, when=(buy and (time > timestamp(fromYear, fromMonth, fromDay, 00, 00)) and (time < timestamp(toYear, toMonth, toDay, 23, 59))))
+strategy.close("Buy", when=(sell and (time < timestamp(toYear, toMonth, toDay, 23, 59))))
+
+if ((time > timestamp(fromYear, fromMonth, fromDay, 00, 00)) and (time < timestamp(toYear, toMonth, toDay, 23, 59)))
+    alert("{\n\"message_type\": \"bot\",\n\"bot_id\": 7634231,\n\"email_token\": \"61d1fb0f-ee23-4a0a-9170-5f43e2a07cc9\",\n\"delay_seconds\": 0\n}", alert.freq_once_per_bar)
+if ((time < timestamp(toYear, toMonth, toDay, 23, 59)))
+    alert("{\n\"action\": \"close_at_market_price\",\n\"message_type\": \"bot\",\n\"bot_id\": 7634231,\n\"email_token\": \"61d1fb0f-ee23-4a0a-9170-5f43e2a07cc9\",\n\"delay_seconds\": 0\n}",  alert.freq_once_per_bar)
+
+// === ALERTS ===
+// plotshape( buy, color=lime, style=shape.arrowdown, text=".", size=size.small )
+// plotshape( sell, color=blue, style=shape.arrowdown, text=":", size=size.small)
+
+// alertcondition( buy, 'buy', 'e=binance a=acc b=buy t=limit p=0.02% q=99.5% s=neousdt' )
+// alertcondition( sell, 'sell', 'e=binance a=acc b=sell t=limit p=-0.02% q=99.5% s=neousdt' )

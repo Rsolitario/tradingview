@@ -1,0 +1,96 @@
+// This source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © solitario
+
+//@version=5
+strategy(title="Over Ema20", shorttitle ="OEMA20", overlay=true)
+// plot(close - ta.atr(14), color=color.red)
+// plot(close + ta.atr(14), color=color.green)
+const_day= 86400000
+opt = input.string(defval="EMA", title="Indicator", options=['EMA', 'SMA'], group="Indicator")
+length_i = input.int(defval=20, title="Length Indicator", group="Indicator")
+day_entry = input.int(defval=7, title="N° of bars for entry", minval=2, maxval=10, group="Entry")
+days = input.int(10, title="N° of days for exit", group="Exit")
+length_atr = input.int(14, title="Length ATR", group="Exit")
+long = input.bool(true, title="Long", group="Type")
+short = input.bool(false, title="Short", group="Type")
+
+ema20 = if opt == 'EMA' 
+    ta.ema(close, length_i)
+else
+    ta.sma(close, length_i)
+plot(ema20)
+
+day_of_range_long(parm)=>
+    rtn = if parm == 1
+        ta.crossover(close[parm-1], ema20[parm-1])
+    else if parm == 2
+        ta.crossover(close[parm-1], ema20[parm-1]) and close[parm-1-1] > ema20[parm-1-1]
+    else if parm == 3
+        ta.crossover(close[parm-1], ema20[parm-1]) and close[parm-1-1] > ema20[parm-1-1] and close[parm-2-1] > ema20[parm-2-1]
+    else if parm == 4
+        ta.crossover(close[parm-1], ema20[parm-1]) and close[parm-1-1] > ema20[parm-1-1] and close[parm-2-1] > ema20[parm-2-1] and close[parm-3-1] > ema20[parm-3-1]
+    else if parm == 5
+        ta.crossover(close[parm-1], ema20[parm-1]) and close[parm-1-1] > ema20[parm-1-1] and close[parm-2-1] > ema20[parm-2-1] and close[parm-3-1] > ema20[parm-3-1] and close[parm-4-1] > ema20[parm-4-1]
+    else if parm == 6
+        ta.crossover(close[parm-1], ema20[parm-1]) and close[parm-1-1] > ema20[parm-1-1] and close[parm-2-1] > ema20[parm-2-1] and close[parm-3-1] > ema20[parm-3-1] and close[parm-4-1] > ema20[parm-4-1] and close[parm-5-1] > ema20[parm-5-1]
+    else if parm == 7
+        ta.crossover(close[parm-1], ema20[parm-1]) and close[parm-1-1] > ema20[parm-1-1] and close[parm-2-1] > ema20[parm-2-1] and close[parm-3-1] > ema20[parm-3-1] and close[parm-4-1] > ema20[parm-4-1] and close[parm-5-1] > ema20[parm-5-1] and close[parm-6-1] > ema20[parm-6-1]
+    else if parm == 8
+        ta.crossover(close[parm-1], ema20[parm-1]) and close[parm-1-1] > ema20[parm-1-1] and close[parm-2-1] > ema20[parm-2-1] and close[parm-3-1] > ema20[parm-3-1] and close[parm-4-1] > ema20[parm-4-1] and close[parm-5-1] > ema20[parm-5-1] and close[parm-6-1] > ema20[parm-6-1] and close[parm-7-1] > ema20[parm-7-1]
+    else if parm == 9
+        ta.crossover(close[parm-1], ema20[parm-1]) and close[parm-1-1] > ema20[parm-1-1] and close[parm-2-1] > ema20[parm-2-1] and close[parm-3-1] > ema20[parm-3-1] and close[parm-4-1] > ema20[parm-4-1] and close[parm-5-1] > ema20[parm-5-1] and close[parm-6-1] > ema20[parm-6-1] and close[parm-7-1] > ema20[parm-7-1] and close[parm-8-1] > ema20[parm-8-1]
+    else if parm == 10
+        ta.crossover(close[parm-1], ema20[parm-1]) and close[parm-1-1] > ema20[parm-1-1] and close[parm-2-1] > ema20[parm-2-1] and close[parm-3-1] > ema20[parm-3-1] and close[parm-4-1] > ema20[parm-4-1] and close[parm-5-1] > ema20[parm-5-1] and close[parm-6-1] > ema20[parm-6-1] and close[parm-7-1] > ema20[parm-7-1] and close[parm-8-1] > ema20[parm-8-1] and close[parm-9-1] > ema20[parm-9-1]
+
+day_of_range_short(parm)=>
+    rtn = if parm == 1
+        ta.crossunder(close[parm-1], ema20[parm-1])
+    else if parm == 2
+        ta.crossunder(close[parm-1], ema20[parm-1]) and close[parm-1-1] < ema20[parm-1-1]
+    else if parm == 3
+        ta.crossunder(close[parm-1], ema20[parm-1]) and close[parm-1-1] < ema20[parm-1-1] and close[parm-2-1] < ema20[parm-2-1]
+    else if parm == 4
+        ta.crossunder(close[parm-1], ema20[parm-1]) and close[parm-1-1] < ema20[parm-1-1] and close[parm-2-1] < ema20[parm-2-1] and close[parm-3-1] < ema20[parm-3-1]
+    else if parm == 5
+        ta.crossunder(close[parm-1], ema20[parm-1]) and close[parm-1-1] < ema20[parm-1-1] and close[parm-2-1] < ema20[parm-2-1] and close[parm-3-1] < ema20[parm-3-1] and close[parm-4-1] < ema20[parm-4-1]
+    else if parm == 6
+        ta.crossunder(close[parm-1], ema20[parm-1]) and close[parm-1-1] < ema20[parm-1-1] and close[parm-2-1] < ema20[parm-2-1] and close[parm-3-1] < ema20[parm-3-1] and close[parm-4-1] < ema20[parm-4-1] and close[parm-5-1] < ema20[parm-5-1]
+    else if parm == 7
+        ta.crossunder(close[parm-1], ema20[parm-1]) and close[parm-1-1] < ema20[parm-1-1] and close[parm-2-1] < ema20[parm-2-1] and close[parm-3-1] < ema20[parm-3-1] and close[parm-4-1] < ema20[parm-4-1] and close[parm-5-1] < ema20[parm-5-1] and close[parm-6-1] < ema20[parm-6-1]
+    else if parm == 8
+        ta.crossunder(close[parm-1], ema20[parm-1]) and close[parm-1-1] < ema20[parm-1-1] and close[parm-2-1] < ema20[parm-2-1] and close[parm-3-1] < ema20[parm-3-1] and close[parm-4-1] < ema20[parm-4-1] and close[parm-5-1] < ema20[parm-5-1] and close[parm-6-1] < ema20[parm-6-1] and close[parm-7-1] < ema20[parm-7-1]
+    else if parm == 9
+        ta.crossunder(close[parm-1], ema20[parm-1]) and close[parm-1-1] < ema20[parm-1-1] and close[parm-2-1] < ema20[parm-2-1] and close[parm-3-1] < ema20[parm-3-1] and close[parm-4-1] < ema20[parm-4-1] and close[parm-5-1] < ema20[parm-5-1] and close[parm-6-1] < ema20[parm-6-1] and close[parm-7-1] < ema20[parm-7-1] and close[parm-8-1] < ema20[parm-8-1]
+    else if parm == 10
+        ta.crossunder(close[parm-1], ema20[parm-1]) and close[parm-1-1] < ema20[parm-1-1] and close[parm-2-1] < ema20[parm-2-1] and close[parm-3-1] < ema20[parm-3-1] and close[parm-4-1] < ema20[parm-4-1] and close[parm-5-1] < ema20[parm-5-1] and close[parm-6-1] < ema20[parm-6-1] and close[parm-7-1] < ema20[parm-7-1] and close[parm-8-1] < ema20[parm-8-1] and close[parm-9-1] < ema20[parm-9-1]
+
+
+var label labelHigh = na
+var stop_long = 0.0
+var time_entry_long = 0.0
+boolean_long = day_of_range_long(day_entry)
+if boolean_long == true and long
+    strategy.entry(id="long", direction=strategy.long)
+    time_entry_long := time_close
+    stop_long := close-ta.atr(length_atr)
+    // labelHigh := label.new(bar_index, high, str.tostring(time_entry_long), color = color.green)
+
+
+// plot(stop_long, color=color.red)
+
+if time_close-(const_day * days) > time_entry_long or close < stop_long
+    strategy.close("long")
+    
+boolean_short = day_of_range_short(day_entry)
+var time_entry_short =0.0
+var stop_short = 0.0
+if boolean_short == true and short
+    strategy.entry(id="short", direction=strategy.short, stop=close+ta.atr(14))
+    time_entry_short := time_close
+    stop_short := close+ta.atr(length_atr)
+    // labelHigh := label.new(bar_index, high, str.tostring(time_entry_short), color = color.green)
+
+// plot(stop_short, color=color.red)
+if time_close-(const_day * days) > time_entry_short or close > stop_short
+    strategy.close("short")
+    

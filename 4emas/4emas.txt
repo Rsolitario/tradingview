@@ -1,0 +1,48 @@
+//@version=5
+strategy("4 Emas", overlay = true)
+i_ema1 = input.int(5, "length Ema1", group="EMA 1")
+i_res = input.timeframe('15', "Resolution", group="EMA 1")
+i_ema2 = input.int(200, "length Ema1", group="EMA 2")
+i_res2 = input.timeframe('1', "Resolution",group="EMA 2")
+i_ema3 = input.int(200, "length Ema1", group="EMA 3")
+i_res3 = input.timeframe('5', "Resolution", group="EMA 3")
+i_ema4 = input.int(200, "length Ema1", group="EMA 4")
+i_res4 = input.timeframe('15', "Resolution", group="EMA 4")
+long_msg = input.string('EMA sequence ready', "long message", group='alert')
+short_msg = input.string('EMA sequence ready', "short message", group="alert")
+s_ema = input.string("e3", options=['e1', 'e2', 'e3', 'e4'], title="stop", group="stop")
+
+
+ema(src, length)=>
+    ta.ema(src, length)
+e1 = request.security(syminfo.tickerid, i_res, ema(close, i_ema1))
+e2 = request.security(syminfo.tickerid, i_res2, ema(close, i_ema2))
+e3 = request.security(syminfo.tickerid, i_res3, ema(close, i_ema3))
+e4 = request.security(syminfo.tickerid, i_res4, ema(close, i_ema4))
+plot(e1, color=color.blue)
+plot(e2, color=color.red)
+plot(e3, color=color.yellow)
+plot(e4, color=color.green)
+
+if close > e1 and e1 > e2 and e2 > e3 and e3 > e4
+    strategy.entry("long", strategy.long)
+    alert(long_msg, alert.freq_once_per_bar)
+if close < e1 and e1 < e2 and e2 < e3 and e3 < e4
+    strategy.entry("short", strategy.short)
+    alert(short_msg, alert.freq_once_per_bar)
+    
+
+var r = 0.0
+if s_ema == 'e1'
+    r := e1
+if s_ema == 'e2'
+    r := e2
+if s_ema == 'e3'
+    r := e3
+if s_ema == 'e4'
+    r := e4
+    
+if close < r
+    strategy.close("long", comment="exit long")
+if close > r
+    strategy.close("short", comment="exit short")
